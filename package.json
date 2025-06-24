@@ -1,0 +1,14 @@
+{
+  "name": "maakaf-backend",
+  "version": "1.0.0",
+  "description": "Backend for Ma'akaf Community Website.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {}
+}
