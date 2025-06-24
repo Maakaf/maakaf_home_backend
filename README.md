@@ -36,5 +36,4 @@ This repository contains the backend for the Ma'akaf Community Website. It provi
    ```
 
 ## Contributing
-
-Contributions are welcome! Please see the `docs/` directory for guidelines and additional information.
+`docs/` directory for guidelines and additional information. Please go to https://github.com/orgs/Maakaf/projects/15/views/3 to see the plan of this project and the open issues.
