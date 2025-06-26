@@ -1,14 +1,29 @@
 {
-  "name": "maakaf-backend",
+  "name": "maakaf_home_backend",
   "version": "1.0.0",
-  "description": "Backend for Ma'akaf Community Website.",
-  "main": "src/index.js",
+  "description": "",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "test": "echo \"No tests specified\" && exit 0"
+    "start": "node dist/main.js",
+    "start:dev": "ts-node src/main.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
-  "license": "MIT",
-  "dependencies": {}
+  "license": "ISC",
+  "dependencies": {
+    "@nestjs/common": "^11.1.3",
+    "@nestjs/core": "^11.1.3",
+    "@nestjs/platform-express": "^11.1.3",
+    "@nestjs/swagger": "^11.2.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "swagger-ui-express": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.4",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.8.3"
+  }
 }
