@@ -1,10 +1,13 @@
 import { NestFactory } from '@nestjs/core';
 import { Module } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
+import { ConfigModule } from '@nestjs/config';
 import { AppController } from './app.controller';
+import { GithubController } from './github.controller';
 
 @Module({
-  controllers: [AppController],
+  imports: [ConfigModule.forRoot({ isGlobal: true })],
+  controllers: [AppController, GithubController],
 })
 class AppModule {}
 
