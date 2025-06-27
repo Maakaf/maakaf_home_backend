@@ -3,10 +3,13 @@ import { Module, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigModule } from '@nestjs/config';
 import { GithubController } from './github.controller';
+import { GithubActivityService } from './github-activity.service';
+import { HttpModule } from '@nestjs/axios';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true })],
+  imports: [ConfigModule.forRoot({ isGlobal: true }), HttpModule],
   controllers: [GithubController],
+  providers: [GithubActivityService],
 })
 class AppModule {}
 
