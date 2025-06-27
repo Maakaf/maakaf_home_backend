@@ -5,6 +5,7 @@ import { ConfigModule } from '@nestjs/config';
 import { GithubController } from './github.controller';
 import { GithubActivityService } from './github-activity.service';
 import { HttpModule } from '@nestjs/axios';
+import { winstonLogger } from './logger';
 
 @Module({
   imports: [ConfigModule.forRoot({ isGlobal: true }), HttpModule],
@@ -14,7 +15,9 @@ import { HttpModule } from '@nestjs/axios';
 class AppModule {}
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: winstonLogger,
+  });
 
   // Enable global validation pipe
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }));

@@ -25,10 +25,6 @@ export class GithubActivityService {
         for (const repo of repos) {
           try {
             if (repo.forkCount <= 3) continue;
-            if (repo.isFork) {
-              const uniqueContributors = await this.getUniqueForkContributors(repo, token);
-              if (uniqueContributors < 5) continue;
-            }
             const activity = await this.getRepoUserActivity(repo, username, token);
             qualifyingRepos.push({
               repoName: repo.name,
@@ -110,30 +106,44 @@ export class GithubActivityService {
     return repos;
   }
 
-  private async getUniqueForkContributors(repo: any, token: string) {
-    try {
-      // For simplicity, just return fork contributors count (TODO: compare with parent contributors)
-      return repo.forkCount;
-    } catch (err) {
-      this.logger.error(`Error getting unique fork contributors for repo ${repo.name}: ${err.message}`);
-      throw err;
-    }
-  }
-
   private async getRepoUserActivity(repo: any, username: string, token: string) {
     const query = `
       query($owner: String!, $name: String!) {
         repository(owner: $owner, name: $name) {
+          defaultBranchRef {
+            target {
+              ... on Commit {
+                history(first: 100) {
+                  nodes {
+                    author { user { login } }
+                    committedDate
+                  }
+                }
+              }
+            }
+          }
           pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
             nodes { 
               createdAt
               author { login }
+              comments(first: 100) {
+                nodes {
+                  createdAt
+                  author { login }
+                }
+              }
             }
           }
           issues(first: 100, states: [OPEN, CLOSED], orderBy: {field: CREATED_AT, direction: DESC}) {
             nodes { 
               createdAt
               author { login }
+              comments(first: 100) {
+                nodes {
+                  createdAt
+                  author { login }
+                }
+              }
             }
           }
         }
@@ -145,19 +155,47 @@ export class GithubActivityService {
     };
     try {
       const data = await this.graphqlRequest(query, variables, token);
-      const prCount = (data.repository?.pullRequests?.nodes || [])
-        .filter((pr: any) => pr.author?.login === username && pr.createdAt >= this.SIX_MONTHS_AGO)
-        .length;
-      const issueCount = (data.repository?.issues?.nodes || [])
-        .filter((issue: any) => issue.author?.login === username && issue.createdAt >= this.SIX_MONTHS_AGO)
-        .length;
-      // TODO: Add commits, PR comments, issue comments
+      this.logger.debug(`GraphQL response for repo ${repo.name} and user ${username}: ${JSON.stringify(data, null, 2)}`);
+      
+      // Count commits
+      const commits = data.repository?.defaultBranchRef?.target?.history?.nodes || [];
+      const commitCount = commits.filter((commit: any) => 
+        commit.author?.user?.login === username && 
+        commit.committedDate >= this.SIX_MONTHS_AGO
+      ).length;
+      
+      // Count PRs and PR comments
+      const pullRequests = data.repository?.pullRequests?.nodes || [];
+      const prCount = pullRequests.filter((pr: any) => 
+        pr.author?.login === username && 
+        pr.createdAt >= this.SIX_MONTHS_AGO
+      ).length;
+      
+      const prComments = pullRequests.flatMap((pr: any) => pr.comments?.nodes || [])
+        .filter((comment: any) => 
+          comment.author?.login === username && 
+          comment.createdAt >= this.SIX_MONTHS_AGO
+        ).length;
+      
+      // Count issues and issue comments
+      const issues = data.repository?.issues?.nodes || [];
+      const issueCount = issues.filter((issue: any) => 
+        issue.author?.login === username && 
+        issue.createdAt >= this.SIX_MONTHS_AGO
+      ).length;
+      
+      const issueComments = issues.flatMap((issue: any) => issue.comments?.nodes || [])
+        .filter((comment: any) => 
+          comment.author?.login === username && 
+          comment.createdAt >= this.SIX_MONTHS_AGO
+        ).length;
+      
       return {
-        commits: 0,
+        commits: commitCount,
         pullRequests: prCount,
         issues: issueCount,
-        prComments: 0,
-        issueComments: 0,
+        prComments: prComments,
+        issueComments: issueComments,
       };
     } catch (err) {
       this.logger.error(`Error getting activity for repo ${repo.name} and user ${username}: ${err.message}`);
