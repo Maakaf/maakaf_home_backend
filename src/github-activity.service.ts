@@ -24,7 +24,7 @@ export class GithubActivityService {
         const qualifyingRepos = [];
         for (const repo of repos) {
           try {
-            if (repo.contributorsCount <= 4) continue;
+            if (repo.forkCount <= 3) continue;
             if (repo.isFork) {
               const uniqueContributors = await this.getUniqueForkContributors(repo, token);
               if (uniqueContributors < 5) continue;
@@ -99,8 +99,6 @@ export class GithubActivityService {
           owner: repo.owner.login,
           stargazerCount: repo.stargazerCount,
           forkCount: repo.forkCount,
-          // For now, we'll use a simple heuristic: if repo has stars or forks, consider it active
-          contributorsCount: repo.stargazerCount + repo.forkCount > 0 ? 5 : 0,
         })));
         if (!data.user?.repositories?.pageInfo?.hasNextPage) break;
         after = data.user.repositories.pageInfo.endCursor;
@@ -115,7 +113,7 @@ export class GithubActivityService {
   private async getUniqueForkContributors(repo: any, token: string) {
     try {
       // For simplicity, just return fork contributors count (TODO: compare with parent contributors)
-      return repo.contributorsCount;
+      return repo.forkCount;
     } catch (err) {
       this.logger.error(`Error getting unique fork contributors for repo ${repo.name}: ${err.message}`);
       throw err;
@@ -124,13 +122,19 @@ export class GithubActivityService {
 
   private async getRepoUserActivity(repo: any, username: string, token: string) {
     const query = `
-      query($owner: String!, $name: String!, $login: String!, $since: DateTime!) {
+      query($owner: String!, $name: String!) {
         repository(owner: $owner, name: $name) {
-          pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], author: $login, orderBy: {field: CREATED_AT, direction: DESC}) {
-            nodes { createdAt }
+          pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
+            nodes { 
+              createdAt
+              author { login }
+            }
           }
-          issues(first: 100, states: [OPEN, CLOSED], author: $login, orderBy: {field: CREATED_AT, direction: DESC}) {
-            nodes { createdAt }
+          issues(first: 100, states: [OPEN, CLOSED], orderBy: {field: CREATED_AT, direction: DESC}) {
+            nodes { 
+              createdAt
+              author { login }
+            }
           }
         }
       }
@@ -138,13 +142,15 @@ export class GithubActivityService {
     const variables = {
       owner: repo.owner,
       name: repo.name,
-      login: username,
-      since: this.SIX_MONTHS_AGO,
     };
     try {
       const data = await this.graphqlRequest(query, variables, token);
-      const prCount = (data.repository?.pullRequests?.nodes || []).filter((pr: any) => pr.createdAt >= this.SIX_MONTHS_AGO).length;
-      const issueCount = (data.repository?.issues?.nodes || []).filter((issue: any) => issue.createdAt >= this.SIX_MONTHS_AGO).length;
+      const prCount = (data.repository?.pullRequests?.nodes || [])
+        .filter((pr: any) => pr.author?.login === username && pr.createdAt >= this.SIX_MONTHS_AGO)
+        .length;
+      const issueCount = (data.repository?.issues?.nodes || [])
+        .filter((issue: any) => issue.author?.login === username && issue.createdAt >= this.SIX_MONTHS_AGO)
+        .length;
       // TODO: Add commits, PR comments, issue comments
       return {
         commits: 0,
