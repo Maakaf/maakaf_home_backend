@@ -4,7 +4,7 @@ import { ApiProperty } from '@nestjs/swagger';
 export class GithubUsersDto {
   @ApiProperty({
     description: 'Array of GitHub usernames',
-    example: ['octocat', 'torvalds'],
+    example: ['urielofir'],
     type: [String],
   })
   @IsArray()
