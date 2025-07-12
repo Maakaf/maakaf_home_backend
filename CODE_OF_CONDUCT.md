@@ -46,4 +46,46 @@ The following behaviors are considered harassment and are unacceptable within ou
 
 * **Sustained disruption of discussions or other project activities.**
 
-##
+## 4. Reporting Guidelines
+
+If you are subject to or witness unacceptable behavior, or have any other concerns, please report it as soon as possible. All complaints will be reviewed and investigated promptly and fairly.
+
+**To report a violation:**
+
+* **Email:** Send a detailed email to `conduct@maakaf.com`. Please include:
+
+    * Your name and contact information (optional, but helpful for follow-up).
+
+    * A description of the incident, including who was involved, what happened, and when and where it occurred.
+
+    * Any relevant context, such as screenshots, chat logs, or other evidence.
+
+* **Direct Message:** If you prefer, you can directly message `@YourMaintainerHandle` on [Platform, e.g., IRC/Matrix/Discord].
+
+All reports will be kept confidential to the extent possible. The identity of the reporter will only be revealed with their explicit consent, or as required by law.
+
+## 5. Enforcement
+
+Upon receiving a report, the Maakaf.com Code of Conduct Committee (or designated maintainers) will:
+
+1.  Acknowledge receipt of the report promptly.
+
+2.  Review the incident and gather any necessary additional information.
+
+3.  Determine the appropriate course of action, which may include:
+
+    * A private warning.
+
+    * A public warning.
+
+    * Temporary ban from project spaces.
+
+    * Permanent ban from project spaces.
+
+    * No action, if the behavior is not deemed a violation.
+
+The decision of the Maakaf.com Code of Conduct Committee (or designated maintainers) will be final.
+
+## 6. Attribution
+
+This Code of Conduct is inspired by and adapted from the [Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct.html) and the [GNU Kind Communications Guidelines](https://www.gnu.org/philosophy/kind-communication.html)
