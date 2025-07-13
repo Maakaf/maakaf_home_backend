@@ -27,18 +27,18 @@ export class GithubActivityService {
         for (const repo of repos) {
           try {
             if (repo.forkCount <= 3) continue;
-            const activity = await this.getRepoUserActivity(
+            const activityLast6Months = await this.getRepoUserActivity(
               repo,
               username,
               token
             );
             // Only include repos with activity in the last 6 months
             if (
-              activity.commits === 0 &&
-              activity.pullRequests === 0 &&
-              activity.issues === 0 &&
-              activity.prComments === 0 &&
-              activity.issueComments === 0
+              activityLast6Months.commits === 0 &&
+              activityLast6Months.pullRequests === 0 &&
+              activityLast6Months.issues === 0 &&
+              activityLast6Months.prComments === 0 &&
+              activityLast6Months.issueComments === 0
             ) {
               continue;
             }
@@ -46,7 +46,7 @@ export class GithubActivityService {
               repoName: repo.name,
               description: repo.description,
               url: repo.url,
-              ...activity,
+              ...activityLast6Months,
             });
           } catch (repoErr) {
             this.logger.warn(
