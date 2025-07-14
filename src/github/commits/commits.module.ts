@@ -1,8 +1,7 @@
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
-import { Commit, CommitSchema } from './commits.schema'; // adjust path as needed
+import { Commit, CommitSchema } from './commits.schema';
 import { CommitsService } from './commits.service';
-import { CommitsController } from './commits.controller'; // if you have a controller
 
 @Module({
   imports: [
@@ -11,7 +10,6 @@ import { CommitsController } from './commits.controller'; // if you have a contr
     ])
   ],
   providers: [CommitsService],
-  controllers: [CommitsController], // if you have a controller
-  exports: [CommitsService], // if you want to use the service elsewhere
+  exports: [CommitsService], // Only export service for internal use
 })
 export class CommitsModule {}
