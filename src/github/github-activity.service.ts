@@ -6,13 +6,11 @@ import { CommitsService } from "./commits/commits.service";
 import { PullRequestsService } from "./pull-requests/pull-requests.service";
 import { IssuesService } from "./issues/issues.service";
 import { CommentsService } from "./comments/comments.service";
+import { AppConfigService } from "../config/app-config.service";
 
 @Injectable()
 export class GithubActivityService {
   private readonly GITHUB_API_URL = "https://api.github.com/graphql";
-  private readonly SIX_MONTHS_AGO = new Date(
-    Date.now() - 183 * 24 * 60 * 60 * 1000
-  ).toISOString();
   private readonly logger = new Logger(GithubActivityService.name);
 
   constructor(
@@ -21,7 +19,8 @@ export class GithubActivityService {
     private readonly commitsService: CommitsService,
     private readonly pullRequestsService: PullRequestsService,
     private readonly issuesService: IssuesService,
-    private readonly commentsService: CommentsService
+    private readonly commentsService: CommentsService,
+    private readonly appConfig: AppConfigService
   ) {}
 
   async getUserActivity(usernames: string[]) {
@@ -34,7 +33,7 @@ export class GithubActivityService {
         const qualifyingRepos = [];
         for (const repo of repos) {
           try {
-            if (repo.forkCount <= 3) continue;
+            if (repo.forkCount <= this.appConfig.minForkCount) continue;
             const activityLast6Months = await this.getRepoUserActivity(
               repo,
               username,
@@ -156,7 +155,7 @@ export class GithubActivityService {
     token: string
   ) {
     const repoFullName = `${repo.owner}/${repo.name}`;
-    const sixMonthsAgo = new Date(this.SIX_MONTHS_AGO);
+    const sixMonthsAgo = this.appConfig.analysisStartDate;
     
     this.logger.debug(`Checking cached data for ${username} in ${repoFullName}`);
     
@@ -198,7 +197,7 @@ export class GithubActivityService {
 
   private async fetchAndCacheRepoActivity(repo: any, username: string, token: string) {
     const repoFullName = `${repo.owner}/${repo.name}`;
-    const sixMonthsAgo = new Date(this.SIX_MONTHS_AGO);
+    const sixMonthsAgo = this.appConfig.analysisStartDate;
     
     const query = `
       query($owner: String!, $name: String!) {
@@ -217,7 +216,7 @@ export class GithubActivityService {
               }
             }
           }
-          pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
+          pullRequests(first: ${this.appConfig.maxPRsPerRepo}, states: [OPEN, CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
             nodes { 
               number
               title

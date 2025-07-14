@@ -6,6 +6,7 @@ import { CommitsModule } from './commits/commits.module';
 import { PullRequestsModule } from './pull-requests/pull-requests.module';
 import { IssuesModule } from './issues/issues.module';
 import { CommentsModule } from './comments/comments.module';
+import { AppConfigService } from '../config/app-config.service';
 
 @Module({
   imports: [
@@ -16,7 +17,7 @@ import { CommentsModule } from './comments/comments.module';
     CommentsModule
   ],
   controllers: [GithubController],
-  providers: [GithubActivityService],
+  providers: [GithubActivityService, AppConfigService],
   exports: [GithubActivityService],
 })
 export class GithubModule {}

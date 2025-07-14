@@ -5,6 +5,7 @@ import { ConfigModule } from '@nestjs/config';
 import { winstonLogger } from './logger';
 import { MongooseModule } from '@nestjs/mongoose';
 import { GithubModule } from './github/github.module';
+import { HealthController } from './health/health.controller';
 import { validate } from './config/env.validation';
 
 @Module({
@@ -13,9 +14,10 @@ import { validate } from './config/env.validation';
       isGlobal: true,
       validate,
     }),
-    MongooseModule.forRoot(process.env.MONGODB_URI),
+    MongooseModule.forRoot(process.env.MONGODB_URI || 'mongodb://localhost:27017/maakaf_home'),
     GithubModule,
   ],
+  controllers: [HealthController],
 })
 class AppModule {}
 
