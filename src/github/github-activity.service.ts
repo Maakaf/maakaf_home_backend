@@ -156,236 +156,254 @@ export class GithubActivityService {
     token: string
   ) {
     const repoFullName = `${repo.owner}/${repo.name}`;
+    const sixMonthsAgo = new Date(this.SIX_MONTHS_AGO);
     
-    // First, try to get cached commit count from database
-    const cachedCommitCount = await this.commitsService.getCommitCount(
-      username, 
-      repoFullName, 
-      new Date(this.SIX_MONTHS_AGO)
-    );
+    this.logger.debug(`Checking cached data for ${username} in ${repoFullName}`);
     
-    let commitCount = cachedCommitCount;
+    // Check cached data for all activity types
+    const [
+      cachedCommitCount,
+      cachedPRCount,
+      cachedIssueCount,
+      cachedPRCommentCount,
+      cachedIssueCommentCount
+    ] = await Promise.all([
+      this.commitsService.getCommitCount(username, repoFullName, sixMonthsAgo),
+      this.pullRequestsService.getPRCount(username, repoFullName, sixMonthsAgo),
+      this.issuesService.getIssueCount(username, repoFullName, sixMonthsAgo),
+      this.commentsService.getCommentCount(username, repoFullName, 'PR', sixMonthsAgo),
+      this.commentsService.getCommentCount(username, repoFullName, 'ISSUE', sixMonthsAgo)
+    ]);
     
-    // If no cached data or count is 0, fetch from GitHub API
-    if (cachedCommitCount === 0) {
-      const query = `
-        query($owner: String!, $name: String!) {
-          repository(owner: $owner, name: $name) {
-            defaultBranchRef {
-              target {
-                ... on Commit {
-                  history(first: 100) {
-                    nodes {
-                      sha
-                      author { user { login } }
-                      committedDate
-                      message
-                    }
-                  }
-                }
-              }
-            }
-            pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
-              nodes { 
-                createdAt
-                author { login }
-                comments(first: 100) {
+    // If we have any cached data, use it (optimization: assume if one type is cached, all are)
+    const totalCachedActivity = cachedCommitCount + cachedPRCount + cachedIssueCount + 
+                               cachedPRCommentCount + cachedIssueCommentCount;
+    
+    if (totalCachedActivity > 0) {
+      this.logger.debug(`Using cached data for ${username} in ${repoFullName}`);
+      return {
+        commits: cachedCommitCount,
+        pullRequests: cachedPRCount,
+        issues: cachedIssueCount,
+        prComments: cachedPRCommentCount,
+        issueComments: cachedIssueCommentCount,
+      };
+    }
+    
+    // No cached data found, fetch from GitHub API
+    this.logger.debug(`No cached data found for ${username} in ${repoFullName}, fetching from GitHub API`);
+    
+    return await this.fetchAndCacheRepoActivity(repo, username, token);
+  }
+
+  private async fetchAndCacheRepoActivity(repo: any, username: string, token: string) {
+    const repoFullName = `${repo.owner}/${repo.name}`;
+    const sixMonthsAgo = new Date(this.SIX_MONTHS_AGO);
+    
+    const query = `
+      query($owner: String!, $name: String!) {
+        repository(owner: $owner, name: $name) {
+          defaultBranchRef {
+            target {
+              ... on Commit {
+                history(first: 100) {
                   nodes {
-                    createdAt
-                    author { login }
-                  }
-                }
-              }
-            }
-            issues(first: 100, states: [OPEN, CLOSED], orderBy: {field: CREATED_AT, direction: DESC}) {
-              nodes { 
-                createdAt
-                author { login }
-                comments(first: 100) {
-                  nodes {
-                    createdAt
-                    author { login }
+                    sha
+                    author { user { login } }
+                    committedDate
+                    message
                   }
                 }
               }
             }
           }
-        }
-      `;
-      const variables = {
-        owner: repo.owner,
-        name: repo.name,
-      };
-      
-      try {
-        const data = await this.graphqlRequest(query, variables, token);
-
-        // Process and store commits
-        const commits = data.repository?.defaultBranchRef?.target?.history?.nodes || [];
-        const commitsToStore = commits
-          .filter((commit: any) => commit.author?.user?.login === username)
-          .map((commit: any) => ({
-            repo: repoFullName,
-            repoOwner: repo.owner,
-            sha: commit.sha,
-            committedDate: new Date(commit.committedDate),
-            author: username,
-            message: commit.message,
-            rawData: commit,
-            fetchedAt: new Date()
-          }));
-
-        // Bulk insert commits if any
-        if (commitsToStore.length > 0) {
-          await this.commitsService.bulkUpsert(commitsToStore);
-        }
-
-        // Count commits from the last 6 months
-        commitCount = commits.filter(
-          (commit: any) =>
-            commit.author?.user?.login === username &&
-            new Date(commit.committedDate).getTime() >=
-              new Date(this.SIX_MONTHS_AGO).getTime()
-        ).length;
-
-        // Count PRs and PR comments
-        const pullRequests = data.repository?.pullRequests?.nodes || [];
-        const prCount = pullRequests.filter(
-          (pr: any) =>
-            pr.author?.login === username &&
-            new Date(pr.createdAt).getTime() >=
-              new Date(this.SIX_MONTHS_AGO).getTime()
-        ).length;
-
-        const prComments = pullRequests
-          .flatMap((pr: any) => pr.comments?.nodes || [])
-          .filter(
-            (comment: any) =>
-              comment.author?.login === username &&
-              new Date(comment.createdAt).getTime() >=
-                new Date(this.SIX_MONTHS_AGO).getTime()
-          ).length;
-
-        // Count issues and issue comments
-        const issues = data.repository?.issues?.nodes || [];
-        const issueCount = issues.filter(
-          (issue: any) =>
-            issue.author?.login === username &&
-            new Date(issue.createdAt).getTime() >=
-              new Date(this.SIX_MONTHS_AGO).getTime()
-        ).length;
-
-        const issueComments = issues
-          .flatMap((issue: any) => issue.comments?.nodes || [])
-          .filter(
-            (comment: any) =>
-              comment.author?.login === username &&
-              new Date(comment.createdAt).getTime() >=
-                new Date(this.SIX_MONTHS_AGO).getTime()
-          ).length;
-          
-        return {
-          commits: commitCount,
-          pullRequests: prCount,
-          issues: issueCount,
-          prComments: prComments,
-          issueComments: issueComments,
-        };
-      } catch (err) {
-        this.logger.error(
-          `Error getting activity for repo ${repo.name} and user ${username}: ${err.message}`
-        );
-        throw err;
-      }
-    } else {
-      // Use cached commit count, but still fetch other activity from API
-      const query = `
-        query($owner: String!, $name: String!) {
-          repository(owner: $owner, name: $name) {
-            pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
-              nodes { 
-                createdAt
-                author { login }
-                comments(first: 100) {
-                  nodes {
-                    createdAt
-                    author { login }
-                  }
+          pullRequests(first: 100, states: [OPEN, CLOSED, MERGED], orderBy: {field: CREATED_AT, direction: DESC}) {
+            nodes { 
+              number
+              title
+              state
+              createdAt
+              closedAt
+              mergedAt
+              author { login }
+              comments(first: 100) {
+                nodes {
+                  id
+                  body
+                  createdAt
+                  author { login }
                 }
               }
             }
-            issues(first: 100, states: [OPEN, CLOSED], orderBy: {field: CREATED_AT, direction: DESC}) {
-              nodes { 
-                createdAt
-                author { login }
-                comments(first: 100) {
-                  nodes {
-                    createdAt
-                    author { login }
-                  }
+          }
+          issues(first: 100, states: [OPEN, CLOSED], orderBy: {field: CREATED_AT, direction: DESC}) {
+            nodes { 
+              number
+              title
+              state
+              createdAt
+              closedAt
+              author { login }
+              comments(first: 100) {
+                nodes {
+                  id
+                  body
+                  createdAt
+                  author { login }
                 }
               }
             }
           }
         }
-      `;
-      const variables = {
-        owner: repo.owner,
-        name: repo.name,
+      }
+    `;
+    
+    const variables = { owner: repo.owner, name: repo.name };
+    
+    try {
+      const data = await this.graphqlRequest(query, variables, token);
+      
+      // Process commits
+      const commits = data.repository?.defaultBranchRef?.target?.history?.nodes || [];
+      const userCommits = commits.filter((commit: any) => 
+        commit.author?.user?.login === username
+      );
+      
+      const commitsToStore = userCommits.map((commit: any) => ({
+        repo: repoFullName,
+        repoOwner: repo.owner,
+        sha: commit.sha,
+        committedDate: new Date(commit.committedDate),
+        author: username,
+        message: commit.message,
+        rawData: commit,
+        fetchedAt: new Date()
+      }));
+
+      // Process Pull Requests
+      const pullRequests = data.repository?.pullRequests?.nodes || [];
+      const userPRs = pullRequests.filter((pr: any) => pr.author?.login === username);
+      
+      const prsToStore = userPRs.map((pr: any) => ({
+        repo: repoFullName,
+        repoOwner: repo.owner,
+        prNumber: pr.number,
+        author: username,
+        title: pr.title,
+        state: pr.state,
+        createdAt: new Date(pr.createdAt),
+        closedAt: pr.closedAt ? new Date(pr.closedAt) : undefined,
+        mergedAt: pr.mergedAt ? new Date(pr.mergedAt) : undefined,
+        rawData: pr,
+        fetchedAt: new Date()
+      }));
+
+      // Process Issues
+      const issues = data.repository?.issues?.nodes || [];
+      const userIssues = issues.filter((issue: any) => issue.author?.login === username);
+      
+      const issuesToStore = userIssues.map((issue: any) => ({
+        repo: repoFullName,
+        repoOwner: repo.owner,
+        issueNumber: issue.number,
+        author: username,
+        title: issue.title,
+        state: issue.state,
+        createdAt: new Date(issue.createdAt),
+        closedAt: issue.closedAt ? new Date(issue.closedAt) : undefined,
+        rawData: issue,
+        fetchedAt: new Date()
+      }));
+
+      // Process Comments (PR and Issue comments)
+      const allComments = [];
+      
+      // PR Comments
+      pullRequests.forEach((pr: any) => {
+        const prComments = pr.comments?.nodes || [];
+        prComments.forEach((comment: any) => {
+          if (comment.author?.login === username) {
+            allComments.push({
+              repo: repoFullName,
+              repoOwner: repo.owner,
+              commentId: comment.id,
+              author: username,
+              type: 'PR',
+              parentNumber: pr.number,
+              createdAt: new Date(comment.createdAt),
+              body: comment.body,
+              rawData: comment,
+              fetchedAt: new Date()
+            });
+          }
+        });
+      });
+      
+      // Issue Comments
+      issues.forEach((issue: any) => {
+        const issueComments = issue.comments?.nodes || [];
+        issueComments.forEach((comment: any) => {
+          if (comment.author?.login === username) {
+            allComments.push({
+              repo: repoFullName,
+              repoOwner: repo.owner,
+              commentId: comment.id,
+              author: username,
+              type: 'ISSUE',
+              parentNumber: issue.number,
+              createdAt: new Date(comment.createdAt),
+              body: comment.body,
+              rawData: comment,
+              fetchedAt: new Date()
+            });
+          }
+        });
+      });
+
+      // Store all data in parallel
+      await Promise.all([
+        commitsToStore.length > 0 ? this.commitsService.bulkUpsert(commitsToStore) : Promise.resolve(),
+        prsToStore.length > 0 ? this.pullRequestsService.bulkUpsert(prsToStore) : Promise.resolve(),
+        issuesToStore.length > 0 ? this.issuesService.bulkUpsert(issuesToStore) : Promise.resolve(),
+        allComments.length > 0 ? this.commentsService.bulkUpsert(allComments) : Promise.resolve()
+      ]);
+
+      // Count activity from the last 6 months
+      const commitCount = userCommits.filter((commit: any) =>
+        new Date(commit.committedDate).getTime() >= sixMonthsAgo.getTime()
+      ).length;
+
+      const prCount = userPRs.filter((pr: any) =>
+        new Date(pr.createdAt).getTime() >= sixMonthsAgo.getTime()
+      ).length;
+
+      const issueCount = userIssues.filter((issue: any) =>
+        new Date(issue.createdAt).getTime() >= sixMonthsAgo.getTime()
+      ).length;
+
+      const prCommentCount = allComments.filter((comment: any) =>
+        comment.type === 'PR' && new Date(comment.createdAt).getTime() >= sixMonthsAgo.getTime()
+      ).length;
+
+      const issueCommentCount = allComments.filter((comment: any) =>
+        comment.type === 'ISSUE' && new Date(comment.createdAt).getTime() >= sixMonthsAgo.getTime()
+      ).length;
+
+      this.logger.debug(`Cached ${commitsToStore.length} commits, ${prsToStore.length} PRs, ${issuesToStore.length} issues, ${allComments.length} comments for ${username} in ${repoFullName}`);
+
+      return {
+        commits: commitCount,
+        pullRequests: prCount,
+        issues: issueCount,
+        prComments: prCommentCount,
+        issueComments: issueCommentCount,
       };
       
-      try {
-        const data = await this.graphqlRequest(query, variables, token);
-
-        // Count PRs and PR comments
-        const pullRequests = data.repository?.pullRequests?.nodes || [];
-        const prCount = pullRequests.filter(
-          (pr: any) =>
-            pr.author?.login === username &&
-            new Date(pr.createdAt).getTime() >=
-              new Date(this.SIX_MONTHS_AGO).getTime()
-        ).length;
-
-        const prComments = pullRequests
-          .flatMap((pr: any) => pr.comments?.nodes || [])
-          .filter(
-            (comment: any) =>
-              comment.author?.login === username &&
-              new Date(comment.createdAt).getTime() >=
-                new Date(this.SIX_MONTHS_AGO).getTime()
-          ).length;
-
-        // Count issues and issue comments
-        const issues = data.repository?.issues?.nodes || [];
-        const issueCount = issues.filter(
-          (issue: any) =>
-            issue.author?.login === username &&
-            new Date(issue.createdAt).getTime() >=
-              new Date(this.SIX_MONTHS_AGO).getTime()
-        ).length;
-
-        const issueComments = issues
-          .flatMap((issue: any) => issue.comments?.nodes || [])
-          .filter(
-            (comment: any) =>
-              comment.author?.login === username &&
-              new Date(comment.createdAt).getTime() >=
-                new Date(this.SIX_MONTHS_AGO).getTime()
-          ).length;
-
-        return {
-          commits: commitCount,
-          pullRequests: prCount,
-          issues: issueCount,
-          prComments: prComments,
-          issueComments: issueComments,
-        };
-      } catch (err) {
-        this.logger.error(
-          `Error getting activity for repo ${repo.name} and user ${username}: ${err.message}`
-        );
-        throw err;
-      }
+    } catch (err) {
+      this.logger.error(
+        `Error fetching and caching activity for repo ${repo.name} and user ${username}: ${err.message}`
+      );
+      throw err;
     }
   }
 
