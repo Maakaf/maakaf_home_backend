@@ -208,7 +208,7 @@ export class GithubActivityService {
               ... on Commit {
                 history(first: 100) {
                   nodes {
-                    sha
+                    oid
                     author { user { login } }
                     committedDate
                     message
@@ -272,7 +272,7 @@ export class GithubActivityService {
       const commitsToStore = userCommits.map((commit: any) => ({
         repo: repoFullName,
         repoOwner: repo.owner,
-        sha: commit.sha,
+        sha: commit.oid,
         committedDate: new Date(commit.committedDate),
         author: username,
         message: commit.message,
