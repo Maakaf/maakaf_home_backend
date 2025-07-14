@@ -116,7 +116,42 @@ export class GithubActivityService {
         });
       }
     }
-    return results;
+
+    // Calculate global summary across all users
+    const globalSummary = results.reduce(
+      (acc, userResult) => {
+        if (userResult.summary) {
+          acc.totalCommits += userResult.summary.totalCommits;
+          acc.totalPRs += userResult.summary.totalPRs;
+          acc.totalIssues += userResult.summary.totalIssues;
+          acc.totalPRComments += userResult.summary.totalPRComments;
+          acc.totalIssueComments += userResult.summary.totalIssueComments;
+          acc.totalRepos += userResult.repos.length;
+          acc.successfulUsers += 1;
+        } else {
+          acc.failedUsers += 1;
+        }
+        return acc;
+      },
+      {
+        totalCommits: 0,
+        totalPRs: 0,
+        totalIssues: 0,
+        totalPRComments: 0,
+        totalIssueComments: 0,
+        totalRepos: 0,
+        successfulUsers: 0,
+        failedUsers: 0,
+        totalUsers: usernames.length,
+        analysisTimeframe: `${this.appConfig.analysisStartDate.toISOString().split('T')[0]} to ${new Date().toISOString().split('T')[0]}`,
+        minForkCountFilter: this.appConfig.minForkCount,
+      }
+    );
+
+    return {
+      users: results,
+      globalSummary
+    };
   }
 
   private async fetchUserRepos(username: string, token: string) {

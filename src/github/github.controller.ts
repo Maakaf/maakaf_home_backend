@@ -20,7 +20,7 @@ export class GithubController {
     if (!GITHUB_TOKEN) throw new BadRequestException('GitHub token not set');
     const { usernames } = body;
     const results = await this.githubActivityService.getUserActivity(usernames);
-    this.logger.log(`Returning results for ${results.length} users`);
+    this.logger.log(`Returning results for ${results.users.length} users`);
     return results;
   }
 } 
