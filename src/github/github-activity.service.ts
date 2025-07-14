@@ -6,6 +6,7 @@ import { CommitsService } from "./commits/commits.service";
 import { PullRequestsService } from "./pull-requests/pull-requests.service";
 import { IssuesService } from "./issues/issues.service";
 import { CommentsService } from "./comments/comments.service";
+import { UserProfilesService } from "./user-profiles/user-profiles.service";
 import { AppConfigService } from "../config/app-config.service";
 
 @Injectable()
@@ -20,15 +21,21 @@ export class GithubActivityService {
     private readonly pullRequestsService: PullRequestsService,
     private readonly issuesService: IssuesService,
     private readonly commentsService: CommentsService,
+    private readonly userProfilesService: UserProfilesService,
     private readonly appConfig: AppConfigService
   ) {}
 
   async getUserActivity(usernames: string[]) {
     const token = this.configService.get<string>("GITHUB_TOKEN");
+    this.logger.debug(`GitHub token configured: ${token ? 'Yes' : 'No'}`);
+    this.logger.debug(`Token length: ${token?.length || 0}`);
     const results = [];
 
     for (const username of usernames) {
       try {
+        // Fetch user profile data first
+        const userProfile = await this.fetchUserProfile(username, token);
+        
         const repos = await this.fetchUserRepos(username, token);
         const qualifyingRepos = [];
         for (const repo of repos) {
@@ -78,8 +85,23 @@ export class GithubActivityService {
             totalIssueComments: 0,
           }
         );
+        
         results.push({
-          username,
+          user: {
+            username: userProfile.username,
+            displayName: userProfile.displayName,
+            avatarUrl: userProfile.avatarUrl,
+            bio: userProfile.bio,
+            location: userProfile.location,
+            company: userProfile.company,
+            blog: userProfile.blog,
+            twitterUsername: userProfile.twitterUsername,
+            publicRepos: userProfile.publicRepos,
+            followers: userProfile.followers,
+            following: userProfile.following,
+            accountType: userProfile.accountType,
+            createdAt: userProfile.createdAt,
+          },
           repos: qualifyingRepos,
           summary,
         });
@@ -88,8 +110,7 @@ export class GithubActivityService {
           `Error processing user ${username}: ${userErr.message}`
         );
         results.push({
-          username,
-          error: userErr.message,
+          user: { username, error: userErr.message },
           repos: [],
           summary: null,
         });
@@ -406,6 +427,84 @@ export class GithubActivityService {
     }
   }
 
+  private async fetchUserProfile(username: string, token: string) {
+    this.logger.debug(`Fetching profile for user: ${username}`);
+    
+    // Check if we have cached profile data
+    const cachedProfile = await this.userProfilesService.findByUsername(username);
+    const isProfileCacheValid = cachedProfile && 
+      await this.userProfilesService.isProfileCacheValid(username, this.appConfig.cacheExpiryDate);
+    
+    if (isProfileCacheValid) {
+      this.logger.debug(`Using cached profile for user: ${username}`);
+      return cachedProfile;
+    }
+    
+    // Fetch fresh profile data from GitHub
+    this.logger.debug(`Fetching fresh profile data for user: ${username}`);
+    
+    const query = `
+      query($login: String!) {
+        user(login: $login) {
+          login
+          name
+          bio
+          avatarUrl
+          location
+          company
+          websiteUrl
+          twitterUsername
+          publicRepos: repositories(privacy: PUBLIC) { totalCount }
+          followers { totalCount }
+          following { totalCount }
+          createdAt
+          __typename
+        }
+      }
+    `;
+    
+    try {
+      const data = await this.graphqlRequest(query, { login: username }, token);
+      const user = data.user;
+      
+      if (!user) {
+        throw new Error(`User ${username} not found`);
+      }
+      
+      const profileData = {
+        username: user.login,
+        displayName: user.name,
+        bio: user.bio,
+        avatarUrl: user.avatarUrl,
+        location: user.location,
+        company: user.company,
+        blog: user.websiteUrl, // GitHub uses websiteUrl instead of blog
+        twitterUsername: user.twitterUsername,
+        email: null, // Email requires additional scopes, setting to null
+        publicRepos: user.publicRepos.totalCount,
+        followers: user.followers.totalCount,
+        following: user.following.totalCount,
+        accountType: user.__typename, // 'User' or 'Organization'
+        createdAt: new Date(user.createdAt),
+        rawData: user,
+      };
+      
+      // Store/update the profile data
+      const savedProfile = await this.userProfilesService.upsert(profileData);
+      this.logger.debug(`Cached profile data for user: ${username}`);
+      
+      return savedProfile;
+    } catch (err) {
+      this.logger.error(`Error fetching profile for user ${username}: ${err.message}`);
+      // If we have any cached data, return it as fallback
+      if (cachedProfile) {
+        this.logger.debug(`Using stale cached profile for user: ${username}`);
+        return cachedProfile;
+      }
+      throw err;
+    }
+  }
+
   private async graphqlRequest(query: string, variables: any, token: string) {
     const headers = {
       Authorization: `Bearer ${token}`,
@@ -420,13 +519,19 @@ export class GithubActivityService {
       const response = await lastValueFrom(response$);
       if (response.data.errors) {
         this.logger.error(
-          `GitHub GraphQL error: ${JSON.stringify(response.data.errors)}`
+          `GitHub GraphQL error: ${JSON.stringify(response.data.errors, null, 2)}`
         );
-        throw new Error("GitHub GraphQL error");
+        this.logger.error(`Query: ${query}`);
+        this.logger.error(`Variables: ${JSON.stringify(variables)}`);
+        throw new Error(`GitHub GraphQL error: ${response.data.errors[0]?.message || 'Unknown error'}`);
       }
       return response.data.data;
     } catch (err) {
       this.logger.error(`GraphQL request failed: ${err.message}`);
+      if (err.response) {
+        this.logger.error(`Response status: ${err.response.status}`);
+        this.logger.error(`Response data: ${JSON.stringify(err.response.data, null, 2)}`);
+      }
       throw err;
     }
   }

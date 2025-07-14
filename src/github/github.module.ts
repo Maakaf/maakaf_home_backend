@@ -6,6 +6,7 @@ import { CommitsModule } from './commits/commits.module';
 import { PullRequestsModule } from './pull-requests/pull-requests.module';
 import { IssuesModule } from './issues/issues.module';
 import { CommentsModule } from './comments/comments.module';
+import { UserProfilesModule } from './user-profiles/user-profiles.module';
 import { AppConfigService } from '../config/app-config.service';
 
 @Module({
@@ -14,7 +15,8 @@ import { AppConfigService } from '../config/app-config.service';
     CommitsModule, 
     PullRequestsModule, 
     IssuesModule, 
-    CommentsModule
+    CommentsModule,
+    UserProfilesModule
   ],
   controllers: [GithubController],
   providers: [GithubActivityService, AppConfigService],
