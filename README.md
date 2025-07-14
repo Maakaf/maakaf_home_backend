@@ -33,6 +33,7 @@ This service provides detailed analysis of GitHub user activity over the past 6 
 - Node.js (v16 or higher)
 - npm or yarn
 - GitHub Personal Access Token
+- MongoDB instance (local or cloud)
 
 ## Installation
 
@@ -51,7 +52,25 @@ This service provides detailed analysis of GitHub user activity over the past 6 
    ```bash
    # Create .env file
    echo "GITHUB_TOKEN=your_github_token_here" > .env
+   echo "MONGODB_URI=<your_mongo_connection_string" >> .env
    ```
+
+## MongoDB Setup
+
+### Local MongoDB
+1. Install MongoDB locally or use Docker:
+   ```bash
+   # Using Docker
+   docker run -d -p 27017:27017 --name mongodb mongo:latest
+   
+   # Or install locally following MongoDB installation guide
+   ```
+
+### Cloud MongoDB (MongoDB Atlas)
+1. Create a free account at [MongoDB Atlas](https://www.mongodb.com/atlas)
+2. Create a new cluster
+3. Get your connection string and replace `<password>` with your database user password
+4. Use the connection string as your `MONGODB_URI`
 
 ## GitHub Token Setup
 

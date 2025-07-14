@@ -2,15 +2,20 @@ import { NestFactory } from '@nestjs/core';
 import { Module, ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { ConfigModule } from '@nestjs/config';
-import { GithubController } from './github.controller';
-import { GithubActivityService } from './github-activity.service';
-import { HttpModule } from '@nestjs/axios';
 import { winstonLogger } from './logger';
+import { MongooseModule } from '@nestjs/mongoose';
+import { GithubModule } from './github/github.module';
+import { validate } from './config/env.validation';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), HttpModule],
-  controllers: [GithubController],
-  providers: [GithubActivityService],
+  imports: [
+    ConfigModule.forRoot({ 
+      isGlobal: true,
+      validate,
+    }),
+    MongooseModule.forRoot(process.env.MONGODB_URI),
+    GithubModule,
+  ],
 })
 class AppModule {}
 
