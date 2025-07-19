@@ -25,10 +25,11 @@ export class GithubActivityService {
     private readonly appConfig: AppConfigService
   ) {}
 
-  async getUserActivity(usernames: string[]) {
+  async getUserActivity(usernames: string[], specificRepos?: string[]) {
     const token = this.configService.get<string>("GITHUB_TOKEN");
     this.logger.debug(`GitHub token configured: ${token ? 'Yes' : 'No'}`);
     this.logger.debug(`Token length: ${token?.length || 0}`);
+    
     const results = [];
 
     for (const username of usernames) {
@@ -36,36 +37,87 @@ export class GithubActivityService {
         // Fetch user profile data first
         const userProfile = await this.fetchUserProfile(username, token);
         
-        const repos = await this.fetchUserRepos(username, token);
+        let reposToAnalyze = [];
+        
+        // Always fetch user's own repositories
+        const userRepos = await this.fetchUserRepos(username, token);
+        
+        // Add user repositories to analysis list
+        reposToAnalyze = [...userRepos];
+        
+        // Also fetch specific repositories if provided
+        if (specificRepos && specificRepos.length > 0) {
+          console.log(`🎯 Fetching ${specificRepos.length} specific repositories: ${specificRepos.join(', ')}`);
+          const specificRepoDetails = await this.getSpecificRepoDetails(specificRepos, token);
+          console.log(`📊 Successfully fetched ${specificRepoDetails.length}/${specificRepos.length} specific repositories`);
+          
+          // Merge specific repos with user repos, avoiding duplicates
+          const userRepoKeys = new Set(userRepos.map(repo => `${repo.owner}/${repo.name}`));
+          
+          const uniqueSpecificRepos = specificRepoDetails.filter(repo => 
+            !userRepoKeys.has(`${repo.owner}/${repo.name}`)
+          );
+          
+          if (uniqueSpecificRepos.length > 0) {
+            console.log(`📝 Adding ${uniqueSpecificRepos.length} unique specific repos: ${uniqueSpecificRepos.map(r => `${r.owner}/${r.name}`).join(', ')}`);
+          }
+          
+          reposToAnalyze = [...reposToAnalyze, ...uniqueSpecificRepos];
+        }
+        
+        this.logger.debug(`Total repositories to analyze for ${username}: ${reposToAnalyze.length}`);
+        
         const qualifyingRepos = [];
-        for (const repo of repos) {
+        
+        for (const repo of reposToAnalyze) {
           try {
-            if (repo.forkCount <= this.appConfig.minForkCount) continue;
-            const activityLast6Months = await this.getRepoUserActivity(
-              repo,
-              username,
-              token
-            );
-            // Only include repos with activity in the last 6 months
-            if (
-              activityLast6Months.commits === 0 &&
-              activityLast6Months.pullRequests === 0 &&
-              activityLast6Months.issues === 0 &&
-              activityLast6Months.prComments === 0 &&
-              activityLast6Months.issueComments === 0
-            ) {
+            const repoKey = `${repo.owner}/${repo.name}`;
+            const isSpecificRepo = specificRepos?.includes(repoKey);
+            const isUserRepo = repo.owner === username;
+            
+            this.logger.debug(`Analyzing ${repoKey} for ${username} (${isUserRepo ? 'user repo' : 'external repo'}${isSpecificRepo ? ', specific repo' : ''})`);
+            
+            // Apply fork count filter only to user repos, not specific repos
+            if (isUserRepo && !isSpecificRepo && repo.forkCount <= this.appConfig.minForkCount) {
+              this.logger.debug(`⏭️ Skipping ${repo.name} - insufficient forks (${repo.forkCount} <= ${this.appConfig.minForkCount})`);
               continue;
             }
-            qualifyingRepos.push({
+
+            const activityLast6Months = await this.getRepoUserActivity(repo, username, token);
+            
+            // Check if user has any activity
+            const totalActivity = activityLast6Months.commits + 
+                                activityLast6Months.pullRequests + 
+                                activityLast6Months.issues + 
+                                 activityLast6Months.prComments + 
+                                activityLast6Months.issueComments;
+
+            if (totalActivity === 0) {
+              this.logger.debug(`⏭️ Skipping ${repo.name} - no recent activity for ${username}`);
+              continue;
+            }
+
+            // Log specifically for repos that made it through all filters
+            if (isSpecificRepo) {
+              console.log(`✅ Specific repo ${repoKey} included - activity: ${totalActivity} (commits: ${activityLast6Months.commits}, PRs: ${activityLast6Months.pullRequests}, issues: ${activityLast6Months.issues}, comments: ${activityLast6Months.prComments + activityLast6Months.issueComments})`);
+            }
+            
+            this.logger.debug(`✅ Including ${repo.name} - has activity (${totalActivity} total)`);
+            
+            const repoResult = {
               repoName: repo.name,
+              repoFullName: `${repo.owner}/${repo.name}`,
               description: repo.description,
               url: repo.url,
+              repoType: isUserRepo ? 'owned' : 'external',
+              isSpecificRepo: isSpecificRepo || false,
               ...activityLast6Months,
-            });
+            };
+            
+            qualifyingRepos.push(repoResult);
+
           } catch (repoErr) {
-            this.logger.warn(
-              `Error processing repo ${repo.name} for user ${username}: ${repoErr.message}`
-            );
+            this.logger.error(`Error analyzing repo ${repo.name} for user ${username}: ${repoErr.message}`);
           }
         }
 
@@ -86,6 +138,16 @@ export class GithubActivityService {
           }
         );
         
+        // Add analysis breakdown to summary
+        const analysisBreakdown = {
+          totalReposAnalyzed: reposToAnalyze.length,
+          userRepos: userRepos.length,
+          specificRepos: specificRepos?.length || 0,
+          qualifyingRepos: qualifyingRepos.length,
+          ownedReposWithActivity: qualifyingRepos.filter(r => r.repoType === 'owned').length,
+          externalReposWithActivity: qualifyingRepos.filter(r => r.repoType === 'external').length,
+        };
+        
         results.push({
           user: {
             username: userProfile.username,
@@ -103,16 +165,17 @@ export class GithubActivityService {
             createdAt: userProfile.createdAt,
           },
           repos: qualifyingRepos,
-          summary,
+          summary: {
+            ...summary,
+            ...analysisBreakdown
+          },
         });
+        
       } catch (userErr) {
-        this.logger.error(
-          `Error processing user ${username}: ${userErr.message}`
-        );
+        this.logger.error(`Error processing user ${username}: ${userErr.message}`);
         results.push({
-          user: { username, error: userErr.message },
-          repos: [],
-          summary: null,
+          username,
+          error: userErr.message,
         });
       }
     }
@@ -127,6 +190,7 @@ export class GithubActivityService {
           acc.totalPRComments += userResult.summary.totalPRComments;
           acc.totalIssueComments += userResult.summary.totalIssueComments;
           acc.totalRepos += userResult.repos.length;
+          acc.totalReposAnalyzed += userResult.summary.totalReposAnalyzed;
           acc.successfulUsers += 1;
         } else {
           acc.failedUsers += 1;
@@ -140,11 +204,13 @@ export class GithubActivityService {
         totalPRComments: 0,
         totalIssueComments: 0,
         totalRepos: 0,
+        totalReposAnalyzed: 0,
         successfulUsers: 0,
         failedUsers: 0,
         totalUsers: usernames.length,
         analysisTimeframe: `${this.appConfig.analysisStartDate.toISOString().split('T')[0]} to ${new Date().toISOString().split('T')[0]}`,
         minForkCountFilter: this.appConfig.minForkCount,
+        specificReposProvided: specificRepos?.length || 0,
       }
     );
 
@@ -569,5 +635,64 @@ export class GithubActivityService {
       }
       throw err;
     }
+  }
+
+  // New method to get details for specific repositories
+  private async getSpecificRepoDetails(repoNames: string[], token: string) {
+    const repos = [];
+    
+    for (const repoName of repoNames) {
+      try {
+        const [owner, name] = repoName.split('/');
+        if (!owner || !name) {
+          console.log(`❌ Invalid repo format: ${repoName}. Expected 'owner/repo'`);
+          this.logger.warn(`Invalid repo format: ${repoName}. Expected 'owner/repo'`);
+          continue;
+        }
+
+        const query = `
+          query($owner: String!, $name: String!) {
+            repository(owner: $owner, name: $name) {
+              name
+              description
+              url
+              isFork
+              isArchived
+              owner { login }
+              stargazerCount
+              forkCount
+            }
+          }
+        `;
+
+        const variables = { owner, name };
+        const data = await this.graphqlRequest(query, variables, token);
+        
+        if (data.repository) {
+          const repoData = {
+            name: data.repository.name,
+            description: data.repository.description,
+            url: data.repository.url,
+            isFork: data.repository.isFork,
+            isArchived: data.repository.isArchived,
+            owner: data.repository.owner.login,
+            stargazerCount: data.repository.stargazerCount,
+            forkCount: data.repository.forkCount,
+          };
+          
+          repos.push(repoData);
+          this.logger.debug(`✅ Found repository: ${repoName}`);
+        } else {
+          console.log(`❌ Repository not found or not accessible: ${repoName}`);
+          this.logger.warn(`❌ Repository not found or not accessible: ${repoName}`);
+        }
+        
+      } catch (error) {
+        console.log(`❌ Error fetching repository ${repoName}:`, error.message);
+        this.logger.error(`Error fetching repository ${repoName}: ${error.message}`);
+      }
+    }
+    
+    return repos;
   }
 }

@@ -15,12 +15,18 @@ export class GithubController {
   @Post()
   async getUsersData(@Body() body: GithubUsersDto) {
     this.logger.log(`Received request for usernames: ${JSON.stringify(body.usernames)}`);
+    
+    if (body.repositories?.length) {
+      this.logger.log(`Analyzing specific repositories: ${JSON.stringify(body.repositories)}`);
+    }
+    
     const GITHUB_TOKEN = this.configService.get<string>('GITHUB_TOKEN');
     this.logger.log(`GitHub token configured: ${GITHUB_TOKEN ? 'Yes' : 'No'}`);
     if (!GITHUB_TOKEN) throw new BadRequestException('GitHub token not set');
-    const { usernames } = body;
-    const results = await this.githubActivityService.getUserActivity(usernames);
+    
+    const { usernames, repositories } = body;
+    const results = await this.githubActivityService.getUserActivity(usernames, repositories);
     this.logger.log(`Returning results for ${results.users.length} users`);
     return results;
   }
-} 
+}
