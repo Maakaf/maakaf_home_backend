@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { InjectConnection } from '@nestjs/mongoose';
 import { Connection } from 'mongoose';
+import { BasicHealthResponseDto, DetailedHealthResponseDto } from '../github/github.dto';
 
 @ApiTags('Health')
 @Controller('health')
@@ -13,21 +14,35 @@ export class HealthController {
   ) {}
 
   @Get()
-  @ApiOperation({ summary: 'Basic health check' })
-  @ApiResponse({ status: 200, description: 'Service is healthy' })
-  async healthCheck() {
+  @ApiOperation({ 
+    summary: 'Basic health check',
+    description: 'Returns basic health status of the application including uptime, environment, and current timestamp'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Service is healthy and running normally',
+    type: BasicHealthResponseDto
+  })
+  async healthCheck(): Promise<BasicHealthResponseDto> {
     return {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      environment: this.configService.get('NODE_ENV'),
+      environment: this.configService.get('NODE_ENV') || 'development',
     };
   }
 
   @Get('detailed')
-  @ApiOperation({ summary: 'Detailed health check including dependencies' })
-  @ApiResponse({ status: 200, description: 'Detailed health status' })
-  async detailedHealthCheck() {
+  @ApiOperation({ 
+    summary: 'Detailed health check',
+    description: 'Returns comprehensive health status including external dependencies (MongoDB, GitHub API), system memory usage, and application metrics'
+  })
+  @ApiResponse({ 
+    status: 200, 
+    description: 'Detailed health status with dependencies and system information',
+    type: DetailedHealthResponseDto
+  })
+  async detailedHealthCheck(): Promise<DetailedHealthResponseDto> {
     const mongoStatus = this.connection.readyState === 1 ? 'connected' : 'disconnected';
     const githubToken = this.configService.get('GITHUB_TOKEN') ? 'configured' : 'missing';
 
@@ -35,7 +50,7 @@ export class HealthController {
       status: 'ok',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
-      environment: this.configService.get('NODE_ENV'),
+      environment: this.configService.get('NODE_ENV') || 'development',
       dependencies: {
         mongodb: {
           status: mongoStatus,
