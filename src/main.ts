@@ -49,10 +49,11 @@ async function bootstrap() {
     .addTag('GitHub', 'GitHub activity and user data operations')
     .addTag('Health', 'Application health monitoring endpoints')
     .addServer('http://localhost:3000', 'Development server')
+    .addServer('https://maakafhomebackend-production.up.railway.app', 'Production server')
     .setContact(
       'Maakaf Team',
-      'https://github.com/maakaf-org',
-      'info@maakaf.org'
+      'https://github.com/maakaf',
+      'urielofir@gmail.com'
     )
     .build();
   
